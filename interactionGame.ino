@@ -3,8 +3,13 @@
 #include "rgb_lcd.h"
 #include <CMBMenu.hpp>
 #include "MMA7660.h"
-MMA7660 accelemeter;
+#include <ChainableLED.h>
+#include <EEPROM.h>
 
+#define NOTE_E 165
+
+MMA7660 accelemeterL;
+ADXL345 adxlR; //variable adxl is an instance of the ADXL345 library
 
 //Joystick values
 #define right 0
@@ -12,7 +17,7 @@ MMA7660 accelemeter;
 #define enter 2
 #define none  3
 
-#define ledLeft 4
+#define NUM_LEDS 4
 
 //speaker pin
 #define SPEAKER 3
@@ -23,16 +28,21 @@ int BassTab[]={300,1911};
 rgb_lcd lcd; 
 ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 bool playingGame; //has game been started 
-char *directions[]={"Left", "Up"};
+
+ChainableLED leds(7, 8, NUM_LEDS);
+
+
+char *directions[]={"LeftOut", "LeftUp","RightOut", "RightUp"};
 long direction;
 
 int currentGameScore;
 int highScore;
+int eeAddress =0; //lcation for storing high score 
 
 int gameLength = 5;
 
 // Menus
-String main_menu[] = {"  Start Game  >","<View High Score"};
+String main_menu[] = {"<  Start Game  >","<  Scoreboard  >"};
 
 // Current menu and item to be displayed
 int current_menu_item;
@@ -44,15 +54,28 @@ int last_joy_read;
 int read_joystick() {
   int output = none;
   // read all joystick x value
-  int sensorValue1 = analogRead(A0);
+  int x = analogRead(A0);
+  int y = analogRead(A1);
+  // Serial.print("X: ");
+  // Serial.print(x);
+  // Serial.print("Y: ");
+  // Serial.println(y);
+  // if (sensorValue1 == 1023 || sensorValue1 >= 650){
+  //   output = enter;
+  // } else if (sensorValue1 >= 750 || sensorValue1 >= 450) {
+  //   output = right;
+  // } else if (sensorValue1 <= 270 || sensorValue1 >= 500) {
+  //   output = left;
+  // }
 
-  if (sensorValue1 == 1023){
+  if (x == 1023 ){
     output = enter;
-  } else if (sensorValue1 >= 750) {
+  } else if (y >= 740) {
     output = right;
-  } else if (sensorValue1 <= 270) {
+  } else if (y <= 275 ) {
     output = left;
   }
+
   return output;
 }
 
@@ -79,79 +102,111 @@ void move_left(){
   } 
 }
 
-String read_accel(){
-  String direction;
+String read_accel_L(){
+  String direction="";
 
   int8_t x;
   int8_t y;
   int8_t z;
-  float ax, ay, az;
-  accelemeter.getXYZ(&x, &y, &z);
-
+  accelemeterL.getXYZ(&x, &y, &z);
+  Serial.print("LEFT: ");
   Serial.print("x = ");
-  Serial.println(x);
+  Serial.print(x);
   Serial.print("y = ");
-  Serial.println(y);
+  Serial.print(y);
+  Serial.print("z = ");
+  Serial.println(z);
+  if(x > -10  ){
+    direction = "LeftOut";
+  }
+  if (y < -15){
+    direction =  "LeftUp";
+  }
+  if (x > -25 && x < -18){
+    direction =  "LeftCenter";
+  }
+
+  Serial.println(direction);
+
+  return direction;
+}
+
+String read_accel_R(){
+  String direction="";
+
+  int x, y, z;
+  adxlR.readXYZ(&x, &y, &z);
+  Serial.print("RIGHT: ");
+  Serial.print("x = ");
+  Serial.print(x);
+  Serial.print("y = ");
+  Serial.print(y);
   Serial.print("z = ");
   Serial.println(z);
 
-  if(x < -15){
-  direction = "Left";
+  if(x < 100 ) {
+    direction = "RightOut";
   }
-  else if (y < -15){
-    direction =  "Up";
+  if (y < -150){
+    direction =  "RightUp";
   }
-  else if (-15 < x < 50){
-    direction =  "Center";
+  if (x < 250  && x > 230 ){
+    direction =  "RightCenter";
   }
+    Serial.println(direction);
+
   return direction;
 }
 
 void pinInit()
 {
-    pinMode(SPEAKER,OUTPUT);
-    digitalWrite(SPEAKER,LOW);
+  pinMode(SPEAKER,OUTPUT);
+  digitalWrite(SPEAKER,LOW);
 }
 
 void sound(uint8_t note_index)
 {
     for(int i=0;i<100;i++)
     {
-        digitalWrite(SPEAKER,HIGH);
-        delayMicroseconds(BassTab[note_index]);
-        digitalWrite(SPEAKER,LOW);
-        delayMicroseconds(BassTab[note_index]);
+      digitalWrite(SPEAKER,HIGH);
+      delayMicroseconds(BassTab[note_index]);
+      digitalWrite(SPEAKER,LOW);
+      delayMicroseconds(BassTab[note_index]);
     }
 }
 
 void setup() {
 
     lcd.begin(16, 2);
-    accelemeter.init();
+    accelemeterL.init();
+    adxlR.powerOn();
     Serial.begin(9600);
     randomSeed(666);
     pinInit();
 
-    pinMode(ledLeft, OUTPUT);
+    leds.init();
+
     // Print menu template on lcd.
     lcd.setCursor(0, 0);
     lcd.print("Menu:");
     lcd.setCursor(0, 1);
     lcd.print(main_menu[current_menu_item]);
-  
+    
+    EEPROM.get(eeAddress, highScore);
+    Serial.println(highScore, 3);   
+
     // Init vars
     playingGame = false;
     viewHighScore = false;
     current_menu_item = 0;
     last_joy_read = none;
     current_menu = main_menu;
-    adxl.powerOn();
 }
 
 void loop() {
+
   int current_joy_read = read_joystick();
-  // Serial.print("Current Menu Item");
-  // Serial.println(current_menu_item);
+  // Serial.println(current_joy_read);
   if (current_joy_read != last_joy_read) {
     last_joy_read = current_joy_read;
 
@@ -187,6 +242,13 @@ void loop() {
     if(!playingGame && !viewHighScore){
       lcd.print("Menu:");
       print_line(1, current_menu[current_menu_item]);
+      if(highScore < 10){
+        lcd.setCursor(12,0);
+      }else {
+        lcd.setCursor(11,0);
+      }
+      lcd.print("HS:");
+      lcd.print(highScore);
       currentGameScore = 0;
     }
     //if view high score has been selected
@@ -196,23 +258,46 @@ void loop() {
       lcd.print(highScore);
     }
     else { //if game has started
-      //make sure hand starts in center
+      // make sure hand starts in center
+      // for(int x = 0; x < NUM_LEDS; x++){
+      //   leds.setColorRGB(x, 225, 225, 225); 
+      //   delay(200);
+      // }
 
+      leds.setColorRGB(0, 0, 0, 0); 
+      leds.setColorRGB(1, 0, 0, 0); 
+      leds.setColorRGB(2, 0, 0, 0); 
+      leds.setColorRGB(3, 0, 0, 0); 
       lcd.write("Center hand");
-      String startingPosition = read_accel();
+      String startingPositionL = read_accel_L();
+      String startingPositionR = read_accel_R();
+
       int gameCount = 0;
+
+      Serial.println(startingPositionL);
+      Serial.println(startingPositionR);
+      delay(3000);
       //once centered
-      while (startingPosition=="Center" && gameCount < gameLength){
+      while (startingPositionL =="LeftCenter" && startingPositionR=="RightCenter" && gameCount < gameLength){
+
         lcd.clear();
         lcd.setCursor(0, 0);
-        //choose random direction (this will change to LEDs once we have them connected)
+        //choose random direction 
         direction = random(sizeof(directions)/sizeof(char*));
         lcd.write(directions[direction]);
-
-        if(directions[direction]=="Left"){
-          digitalWrite(ledLeft, HIGH);
+        Serial.print(directions[direction]);
+        if(directions[direction]=="LeftOut"){
+          leds.setColorRGB(0, 225, 0, 0);  
         }
-
+        else if(directions[direction]=="LeftUp"){
+          leds.setColorRGB(1, 0, 0, 255);  
+        }
+        else if(directions[direction]=="RightUp"){
+          leds.setColorRGB(2, 0, 0, 255);  
+        }
+        else if(directions[direction]=="RightOut"){
+          leds.setColorRGB(3, 225, 0, 0);  
+        }
         //print current score on the bottom right corner
         if(currentGameScore < 10){
           lcd.setCursor(15,1);
@@ -222,25 +307,38 @@ void loop() {
         lcd.print(currentGameScore);
 
         delay(1500);
-        //read hand direction
-        String newDirection = read_accel();
-        if (newDirection == directions[direction]){
+      //   //read hand direction
+        String newDirectionL = read_accel_L();
+        String newDirectionR = read_accel_R();
+        if (newDirectionL == directions[direction]){
           sound(0);
-
           lcd.setCursor(0, 1);
           lcd.write("CORRECT!");
+                  Serial.println("CORRECT!");
+
+          currentGameScore++;
+        } else if (newDirectionR == directions[direction]){
+          sound(0);
+          lcd.setCursor(0, 1);
+          lcd.write("CORRECT!");
+                  Serial.println("CORRECT!");
+
           currentGameScore++;
         }
         else{
           sound(1);
-
           lcd.setCursor(0, 1);
           lcd.write("WRONG!");
+                            Serial.println("WRONG!");
+
         }
         gameCount++;
-        digitalWrite(ledLeft, LOW);
 
-        delay(500); 
+      leds.setColorRGB(0, 0, 0, 0); 
+      leds.setColorRGB(1, 0, 0, 0); 
+      leds.setColorRGB(2, 0, 0, 0); 
+      leds.setColorRGB(3, 0, 0, 0); 
+        delay(1000); 
       } 
       
       if(gameCount == gameLength) {
@@ -249,12 +347,25 @@ void loop() {
         lcd.write("Game Over");
         if (currentGameScore > highScore){
           highScore = currentGameScore;
+          EEPROM.put(eeAddress, highScore);
           lcd.setCursor(0, 1);
           lcd.write("New High Score!");
+          if(currentGameScore < 10){
+            lcd.setCursor(15,1);
+          }else {
+            lcd.setCursor(14,1);
+          }
+          lcd.print(currentGameScore);
         }
         else {
           lcd.setCursor(0, 1);
-          lcd.write("Try harder");
+          lcd.write("Try harder" );
+          if(currentGameScore < 10){
+            lcd.setCursor(15,1);
+          }else {
+            lcd.setCursor(14,1);
+          }
+          lcd.print(currentGameScore);
         }
         delay(3000);
         playingGame = false;
