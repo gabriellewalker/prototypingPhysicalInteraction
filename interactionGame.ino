@@ -27,7 +27,6 @@ bool joystickPressed;
 // speaker tones
 int BassTab[] = { 300, 1911, 1000, 500 };
 
-bool playingGame;  // has game been started
 
 //Directions
 char *directions[] = { "LeftOut", "LeftUp", "RightOut", "RightUp" };
@@ -40,18 +39,21 @@ int eeAddressHard;
 
 int currentGameScore;
 
-int gameLength = 3;
+int gameLength = 10;
 int gameCount;
 int difficulty;
 bool tutorialMode;
-int gameState; //0 = not started/ennded , 1 = playing, 2 = paused
+bool playingGame;  // has game in progress
+int gameState;     //0 = not started/ended , 1 = playing, 2 = paused
 
 byte level;
 // Menus
 String main_menu[] = { "<   Tutorial   >", "<  Easy Level  >", "< Medium Level >", "<  Hard Level  >", "<  Scoreboard  >" };
+String pause_menu[] = { "<    Resume    >", "<   Restart    >", "<     Exit     >" };
 
 // Current menu and item to be displayed
 int current_menu_item;
+int current_pause_menu_item;
 bool viewHighScore;
 String *current_menu;
 
@@ -81,12 +83,20 @@ void print_line(int line, String text) {
   lcd.print(text);
 }
 
-void move_right() {
-  current_menu_item == 4 ? current_menu_item = 0 : current_menu_item += 1;
+void move_right(String menu) {
+  if (menu == "main") {
+    current_menu_item == 4 ? current_menu_item = 0 : current_menu_item += 1;
+  } else if (menu == "pause") {
+    current_pause_menu_item == 2 ? current_pause_menu_item = 0 : current_pause_menu_item += 1;
+  }
 }
 
-void move_left() {
-  current_menu_item == 0 ? current_menu_item = 4 : current_menu_item -= 1;
+void move_left(String menu) {
+  if (menu == "main") {
+    current_menu_item == 0 ? current_menu_item = 4 : current_menu_item -= 1;
+  } else if (menu == "pause") {
+    current_pause_menu_item == 0 ? current_pause_menu_item = 2 : current_pause_menu_item -= 1;
+  }
 }
 
 String read_accel_L() {
@@ -162,7 +172,11 @@ void setScoreCursor(int currentScore, int mode) {
   } else {
     lcd.setCursor(8, row);
   }
-  lcd.print(F("Pts:"));
+  if (gameState != 2) {
+    lcd.print(F("Pts:"));
+  } else {
+    lcd.setCursor(14, 0);
+  }
 }
 
 int getScore() {
@@ -171,8 +185,6 @@ int getScore() {
 }
 
 void checkScore(int currentGameScore, int level) {
-  Serial.print(F("LEVEL"));
-  Serial.println(level);
   lcd.setCursor(0, 1);
   lcd.print(F("Your score:  "));
   lcd.print(currentGameScore);
@@ -184,6 +196,7 @@ void checkScore(int currentGameScore, int level) {
     highScores[level] = currentGameScore;
     lcd.setCursor(0, 0);
     lcd.print(F("New High Score!"));
+    delay(1000);
     if (level == 0) {
       Serial.print(F("SAVING SCORE TO EASY"));
       EEPROM.put(eeAddressEasy, highScores[level]);
@@ -198,13 +211,28 @@ void checkScore(int currentGameScore, int level) {
     lcd.setCursor(0, 0);
     lcd.print(F("Try again!      "));
   }
+  delay(2000);
 }
 
-void viewMenu() {
+void viewMenu(String menu, int menu_item) {
   viewHighScore = false;
-  lcd.clear();
-  lcd.print(F("Menu:"));
-  print_line(1, current_menu[current_menu_item]);
+  lcd.setCursor(0, 0);
+  if (menu == "main") {
+    lcd.clear();
+    lcd.print(F("Menu:"));
+    print_line(1, current_menu[current_menu_item]);
+  } else if (menu == "pause") {
+    lcd.print(F("Game paused:  "));
+    if (!tutorialMode) {
+      lcd.setCursor(14, 0);
+      lcd.print(currentGameScore);
+    }
+    else{
+      lcd.setCursor(14, 0);
+      lcd.print("  ");
+    }
+    print_line(1, pause_menu[current_pause_menu_item]);
+  }
 }
 
 void viewHighScores() {
@@ -219,14 +247,20 @@ void viewHighScores() {
       lcd.print(highScores[i]);
     }
     if (i == 1) {
-      lcd.setCursor(6, 1);
+      lcd.setCursor(5, 1);
       lcd.print(F("M:"));
       lcd.print(highScores[i]);
     }
     if (i == 2) {
-      lcd.setCursor(12, 1);
+      lcd.setCursor(10, 1);
       lcd.print(F("H:"));
-      lcd.print(highScores[i]);
+      if(highScores[i] < 100){
+        lcd.print(highScores[i]);
+        lcd.print(" ");
+      }else{
+        lcd.print(highScores[i]);
+      }
+
     }
   }
 }
@@ -248,11 +282,12 @@ void setup() {
   playingGame = false;
   viewHighScore = false;
   current_menu_item = 0;
+  current_pause_menu_item = 0;
   last_joy_read = none;
   current_menu = main_menu;
   currentGameScore = 0;
 
-  gameCount = 0; 
+  gameCount = 0;
   gameState = 0;
 
   eeAddressEasy = 0;  // location for storing high score easy
@@ -268,7 +303,9 @@ void setup() {
 }
 
 void printScore(bool point, int points) {
-
+  if (tutorialMode) {
+    lcd.clear();
+  }
   if (point) {
     sound(0);
     lcd.setCursor(0, 0);
@@ -279,65 +316,12 @@ void printScore(bool point, int points) {
     lcd.print(10);
   } else {
     sound(1);
-    lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print(F("WRONG!"));
   }
 }
 
-void displayMenu(int current_joy_read) {
-  if (current_joy_read != last_joy_read) {
-    last_joy_read = current_joy_read;
-    switch (current_joy_read) {
-      case right:
-        move_right();
-        viewMenu();
-        break;
-      case left:
-        move_left();
-        viewMenu();
-        break;
-      case enter:  // If joystick is pressed down
-        if (current_menu_item == 0) { //tutorial
-          gameState = 1;
-          playingGame = true;
-          tutorialMode = true;
-          difficulty = 3000;
-          level = 4;
-        }
-        if (current_menu_item == 1) { //easy
-          playingGame = true;
-          difficulty = 3000;
-          level = 0;
-          gameState = 1;
-        }
-        if (current_menu_item == 2) { //medium
-          playingGame = true;
-          difficulty = 2000;
-          level = 1;
-          gameState = 1;
-        }
-        if (current_menu_item == 3) { //hard
-          playingGame = true;
-          difficulty = 1000;
-          level = 2;
-          gameState = 1;
-        }
-        if (current_menu_item == 4) {
-          if (viewHighScore) {  // If already displaying high score, return to menu
-            viewMenu();
-          } else {
-            viewHighScores();
-          }
-        }
-        break;
-      default:
-        break;
-    }
-  }
-}
-
-String getDirection(){
+String getDirection() {
   direction = random(sizeof(directions) / sizeof(char *));
   if (directions[direction] == "LeftOut") {
     leds.setColorRGB(0, 225, 0, 0);
@@ -372,33 +356,112 @@ String getDirection(){
       lcd.print(F("arm OUT"));
     }
   }
+  int current_joy_read = read_joystick();
+  checkState(current_joy_read);
   return directions[direction];
 }
 
-void checkState(){
-  bool joystickClicked = false;
-  int joystick = read_joystick();
-  switch (joystick) {
-    case enter:
-      joystickClicked = true;
-      break;
-    default:
-      joystickClicked = false;
-      break;
-    }
+void checkState(int current_joy_read) {
+  // Serial.print(F("Last read: "));
+  // Serial.println(last_joy_read);
+  // Serial.print(F("New State: "));
+  // Serial.println(current_joy_read);
+  if (current_joy_read != last_joy_read) {
+    last_joy_read = current_joy_read;
+    switch (current_joy_read) {
+      case right:
+        if (!viewHighScore) {
+          move_right("main");
+          viewMenu("main", current_menu_item);
+        }
+        if (gameState == 2) {
+          move_right("pause");
+          viewMenu("pause", current_pause_menu_item);
+        }
+        break;
+      case left:
+        if (!viewHighScore) {
+          move_left("main");
+          viewMenu("main", current_menu_item);
+        }
+        if (gameState == 2) {
+          move_left("pause");
+          viewMenu("pause", current_pause_menu_item);
+        }
+        break;
+      case enter:
+        if (!playingGame) {
+          if (current_menu_item == 0) {  //tutorial
+            gameState = 1;
+            playingGame = true;
+            tutorialMode = true;
+            difficulty = 3000;
+            level = 4;
+          }
+          if (current_menu_item == 1) {  //easy
+            playingGame = true;
+            difficulty = 2000;
+            level = 0;
+            gameState = 1;
+          }
+          if (current_menu_item == 2) {  //medium
+            playingGame = true;
+            difficulty = 1500;
+            level = 1;
+            gameState = 1;
+          }
+          if (current_menu_item == 3) {  //hard
+            playingGame = true;
+            difficulty = 1000;
+            level = 2;
+            gameState = 1;
+          }
+          if (current_menu_item == 4) {  //view high score
+            if (viewHighScore) {         // If already displaying high score, return to menu
+              viewMenu("main", current_menu_item);
+            } else {
+              viewHighScores();
+            }
+          }
+        } else if (gameState == 2) {           //if game pause
+          if (current_pause_menu_item == 0) {  //resume game
+            Serial.print("Resuming game: ");
+            gameState = 1;
+          }
+          if (current_pause_menu_item == 1) {  //restart game
+            Serial.print(F("Restarting game: "));
+            gameState = 1;
+            gameCount = 0;
+          }
+          if (current_pause_menu_item == 2) {  //exit game
+            Serial.print("Exiting game: ");
+            gameState = 0;
+            gameCount = 0;
+            playingGame = false;
+            tutorialMode = false;
+            viewMenu("main", current_menu_item);
+          }
 
-  if(joystickClicked && gameState == 2){
-    Serial.print("joystickClicked: ");
-    Serial.println(joystickClicked);
-    gameState =1;
-  }else if(joystickClicked && gameState == 1){
-    Serial.print("joystickClicked: ");
-    Serial.println(joystickClicked);
-    gameState = 2;
+        } else if (gameState == 1) {       // if game playing
+          Serial.print(F("Pausing game: "));  //pause game
+          gameState = 2;
+          if (gameCount != gameLength || tutorialMode) {
+            viewMenu("pause", current_pause_menu_item);
+            print_line(1, pause_menu[current_pause_menu_item]);
+          }
+        } else if (tutorialMode) {
+          Serial.print(F("TUTORIAL MODE PAUSE"));
+          viewMenu("pause", current_pause_menu_item);
+          gameState = 2;
+        }
+        break;
+      default:
+        break;
+    }
   }
 }
 
-void printCountdown(){
+void printCountdown() {
   for (int i = 3; i > -1; i--) {
     lcd.clear();
     lcd.setCursor(0, 1);
@@ -413,72 +476,73 @@ void printCountdown(){
   }
 }
 
-void printInstructions(){
+void printInstructions() {
   //Instructions
+  int current_joy_read = read_joystick();
+  checkState(current_joy_read);
   lcd.print(F("Face hands ahead"));
   lcd.setCursor(0, 1);
   lcd.print(F("palms face down "));
-  delay(2000);
+  delay(3000);
 
   if (tutorialMode) {
+    current_joy_read = read_joystick();
+    checkState(current_joy_read);
     lcd.setCursor(0, 0);
     lcd.print(F("Tutorial scores "));
     lcd.setCursor(0, 1);
     lcd.print(F("won't be saved "));
-    delay(2000);
+    delay(3000);
+    current_joy_read = read_joystick();
+    checkState(current_joy_read);
     lcd.setCursor(0, 0);
-    lcd.print(F("To exit game"));
+
+    lcd.print(F("To pause game  "));
     lcd.setCursor(0, 1);
     lcd.print(F("Hold joystick in"));
-    delay(2000);
+    delay(3000);
+    current_joy_read = read_joystick();
+    checkState(current_joy_read);
     lcd.setCursor(0, 0);
     lcd.print(F("Face hands ahead"));
     lcd.setCursor(0, 1);
     lcd.print(F("palms face down "));
-    delay(2000);
+    delay(3000);
   }
 }
 
 void loop() {
-  checkState();
+  int current_joy_read = read_joystick();
+  checkState(current_joy_read);
 
-  if(playingGame == false){
-    int current_joy_read = read_joystick();
-    displayMenu(current_joy_read);
-  }
-  //  if game has been paused
-  else if(gameState == 2){
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print(F("Game Paused"));
-    lcd.setCursor(0,1);
-    lcd.print(F("<Resume    Exit>"));
-  }
-  // if game has begun
-  else if(gameState == 1){
-    //if game has not played any rounds 
-    if(gameCount == 0){
+  if (gameState == 1) {
+    //if game has not played any rounds
+    if (gameCount == 0) {
       //start new game
       currentGameScore = 0;
       turnLedsOn();
       lcd.clear();
       printInstructions();
-      checkState();
+      current_joy_read = read_joystick();
+      checkState(current_joy_read);
 
-      String startingPositionL = read_accel_L();
-      String startingPositionR = read_accel_R();
-      while (startingPositionL != "LeftCenter" && startingPositionR != "RightCenter") {
-        checkState();
+      String startingPositionL;
+      String startingPositionR;
+      while (startingPositionL != "LeftCenter" && startingPositionR != "RightCenter" && gameState != 2) {
+        current_joy_read = read_joystick();
+        checkState(current_joy_read);
         startingPositionL = read_accel_L();
         startingPositionR = read_accel_R();
       }
     }
-
-    printCountdown();
+    if (gameState != 2) {
+      printCountdown();
+    }
     delay(500);
 
     while (gameState == 1 && gameCount < gameLength) {
-      checkState();
+      current_joy_read = read_joystick();
+      checkState(current_joy_read);
       lcd.clear();
 
       if (!tutorialMode) {
@@ -488,7 +552,8 @@ void loop() {
 
       // choose random direction
       String randomDirection = getDirection();
-      checkState();
+      current_joy_read = read_joystick();
+      checkState(current_joy_read);
       delay(difficulty);
 
       // read hand direction
@@ -502,17 +567,22 @@ void loop() {
           currentGameScore += pointsToAdd;
           printScore(true, pointsToAdd);
         }
+        current_joy_read = read_joystick();
+        checkState(current_joy_read);
         printScore(true, 0);
       } else {
         sound(1);
         printScore(false, 0);
+        current_joy_read = read_joystick();
+        checkState(current_joy_read);
       }
       // print current score on the top right corner
       if (!tutorialMode) {
         setScoreCursor(currentGameScore, 2);
         lcd.print(currentGameScore);
       }
-      checkState();
+      current_joy_read = read_joystick();
+      checkState(current_joy_read);
       gameCount++;
       turnLedsOn();
       delay(1000);
@@ -527,11 +597,12 @@ void loop() {
         checkScore(currentGameScore, level);
       } else {
         tutorialMode = false;
+        delay(2000);
       }
       gameState = 0;
       gameCount = 0;
       playingGame = false;
-      viewMenu();
-    } 
+      viewMenu("main", current_menu_item);
+    }
   }
 }
