@@ -106,6 +106,11 @@ String read_accel_L() {
   int8_t y;
   int8_t z;
   accelemeterL.getXYZ(&x, &y, &z);
+  Serial.print("X:");
+  Serial.println(x);
+  Serial.print("Y:");
+  Serial.println(y);
+  
   if (x > -10) {
     direction = "LeftOut";
   }
@@ -123,6 +128,10 @@ String read_accel_R() {
 
   int x, y, z;
   adxlR.readXYZ(&x, &y, &z);
+    Serial.print("X:");
+  Serial.println(x);
+  Serial.print("Y:");
+  Serial.println(y);
   if (x < 100) {
     direction = "RightOut";
   }
@@ -147,6 +156,7 @@ void sound(uint8_t note_index) {
     digitalWrite(SPEAKER, LOW);
     delayMicroseconds(BassTab[note_index]);
   }
+  digitalWrite(SPEAKER, LOW);
 }
 
 void turnLedsOn() {
@@ -154,6 +164,7 @@ void turnLedsOn() {
   leds.setColorRGB(1, 225, 225, 225);
   leds.setColorRGB(2, 225, 225, 225);
   leds.setColorRGB(3, 225, 225, 225);
+    digitalWrite(SPEAKER, LOW);
 }
 
 
@@ -226,8 +237,7 @@ void viewMenu(String menu, int menu_item) {
     if (!tutorialMode) {
       lcd.setCursor(14, 0);
       lcd.print(currentGameScore);
-    }
-    else{
+    } else {
       lcd.setCursor(14, 0);
       lcd.print("  ");
     }
@@ -254,21 +264,21 @@ void viewHighScores() {
     if (i == 2) {
       lcd.setCursor(10, 1);
       lcd.print(F("H:"));
-      if(highScores[i] < 100){
+      if (highScores[i] < 100) {
         lcd.print(highScores[i]);
         lcd.print(" ");
-      }else{
+      } else {
         lcd.print(highScores[i]);
       }
-
     }
   }
 }
 
 void setup() {
-  // for (int i = 0 ; i < EEPROM.length() ; i++) {
-  //     EEPROM.write(i, 0);
-  //  }
+  // Uncomment the below, run once, then comment out again. To test - scoreboard should show 0 for all levels. 
+  for (int i = 0 ; i < EEPROM.length() ; i++) {
+      EEPROM.write(i, 0);
+   }
   lcd.begin(16, 2);
   accelemeterL.init();
   adxlR.powerOn();
@@ -327,9 +337,9 @@ String getDirection() {
     leds.setColorRGB(0, 225, 0, 0);
     if (tutorialMode) {
       lcd.setCursor(0, 0);
-      lcd.print(F("<- Flip left"));
+      lcd.print(F("<- Turn left"));
       lcd.setCursor(0, 1);
-      lcd.print(F("  wrist "));
+      lcd.print(F("arm OVER & hold"));
     }
   } else if (directions[direction] == "LeftUp") {
     leds.setColorRGB(1, 0, 225, 0);
@@ -337,7 +347,7 @@ String getDirection() {
       lcd.setCursor(0, 0);
       lcd.print(F("^ Lift left"));
       lcd.setCursor(0, 1);
-      lcd.print(F("  arm UP"));
+      lcd.print(F("arm UP & hold"));
     }
   } else if (directions[direction] == "RightUp") {
     leds.setColorRGB(2, 0, 225, 0);
@@ -345,15 +355,15 @@ String getDirection() {
       lcd.setCursor(0, 0);
       lcd.print(F("Lift right ^"));
       lcd.setCursor(0, 1);
-      lcd.print(F("arm"));
+      lcd.print(F("arm UP & hold"));
     }
   } else if (directions[direction] == "RightOut") {
     leds.setColorRGB(3, 225, 0, 0);
     if (tutorialMode) {
       lcd.setCursor(0, 0);
-      lcd.print(F("Flip right ->"));
+      lcd.print(F("Turn right ->"));
       lcd.setCursor(0, 1);
-      lcd.print(F("arm OUT"));
+      lcd.print(F("arm OVER & hold"));
     }
   }
   int current_joy_read = read_joystick();
@@ -362,30 +372,26 @@ String getDirection() {
 }
 
 void checkState(int current_joy_read) {
-  // Serial.print(F("Last read: "));
-  // Serial.println(last_joy_read);
-  // Serial.print(F("New State: "));
-  // Serial.println(current_joy_read);
   if (current_joy_read != last_joy_read) {
     last_joy_read = current_joy_read;
     switch (current_joy_read) {
       case right:
-        if (!viewHighScore) {
-          move_right("main");
-          viewMenu("main", current_menu_item);
-        }
-        if (gameState == 2) {
-          move_right("pause");
-          viewMenu("pause", current_pause_menu_item);
-        }
-        break;
-      case left:
         if (!viewHighScore) {
           move_left("main");
           viewMenu("main", current_menu_item);
         }
         if (gameState == 2) {
           move_left("pause");
+          viewMenu("pause", current_pause_menu_item);
+        }
+        break;
+      case left:
+        if (!viewHighScore) {
+          move_right("main");
+          viewMenu("main", current_menu_item);
+        }
+        if (gameState == 2) {
+          move_right("pause");
           viewMenu("pause", current_pause_menu_item);
         }
         break;
@@ -406,13 +412,13 @@ void checkState(int current_joy_read) {
           }
           if (current_menu_item == 2) {  //medium
             playingGame = true;
-            difficulty = 1500;
+            difficulty = 1000;
             level = 1;
             gameState = 1;
           }
           if (current_menu_item == 3) {  //hard
             playingGame = true;
-            difficulty = 1000;
+            difficulty = 500;
             level = 2;
             gameState = 1;
           }
@@ -442,7 +448,7 @@ void checkState(int current_joy_read) {
             viewMenu("main", current_menu_item);
           }
 
-        } else if (gameState == 1) {       // if game playing
+        } else if (gameState == 1) {          // if game playing
           Serial.print(F("Pausing game: "));  //pause game
           gameState = 2;
           if (gameCount != gameLength || tutorialMode) {
@@ -483,35 +489,57 @@ void printInstructions() {
   lcd.print(F("Face hands ahead"));
   lcd.setCursor(0, 1);
   lcd.print(F("palms face down "));
-  delay(3000);
+  delay(4000);
 
   if (tutorialMode) {
     current_joy_read = read_joystick();
     checkState(current_joy_read);
-    lcd.setCursor(0, 0);
-    lcd.print(F("Tutorial scores "));
-    lcd.setCursor(0, 1);
-    lcd.print(F("won't be saved "));
-    delay(3000);
+
     current_joy_read = read_joystick();
     checkState(current_joy_read);
-    lcd.setCursor(0, 0);
 
+    lcd.setCursor(0, 0);
+    lcd.print(F("Wear wristbands "));
+    lcd.setCursor(0, 1);
+    lcd.print(F("cables go out    "));
+    delay(5000);
+
+    current_joy_read = read_joystick();
+    checkState(current_joy_read);
+
+    lcd.setCursor(0, 0);
+    lcd.print(F("Correct move    "));
+    lcd.setCursor(0, 1);
+    lcd.print(F("get 10 points  "));
+    delay(5000);
+
+    current_joy_read = read_joystick();
+    checkState(current_joy_read);
+
+    lcd.setCursor(0, 0);
     lcd.print(F("To pause game  "));
     lcd.setCursor(0, 1);
     lcd.print(F("Hold joystick in"));
-    delay(3000);
+    delay(5000);
+
     current_joy_read = read_joystick();
     checkState(current_joy_read);
+
     lcd.setCursor(0, 0);
-    lcd.print(F("Face hands ahead"));
+    lcd.print(F("Tutorial scores "));
     lcd.setCursor(0, 1);
-    lcd.print(F("palms face down "));
-    delay(3000);
+    lcd.print(F("won't be saved   "));
+    delay(5000);
   }
 }
 
 void loop() {
+    digitalWrite(SPEAKER, LOW);
+
+  String directionR = read_accel_R();
+  String directionL = read_accel_L();
+  Serial.println(directionR);
+  Serial.println(directionL);
   int current_joy_read = read_joystick();
   checkState(current_joy_read);
 
@@ -561,7 +589,6 @@ void loop() {
       String newDirectionR = read_accel_R();
 
       if (newDirectionL == randomDirection || newDirectionR == randomDirection) {
-        sound(0);
         if (!tutorialMode) {
           int pointsToAdd = getScore();
           currentGameScore += pointsToAdd;
@@ -571,7 +598,6 @@ void loop() {
         checkState(current_joy_read);
         printScore(true, 0);
       } else {
-        sound(1);
         printScore(false, 0);
         current_joy_read = read_joystick();
         checkState(current_joy_read);
@@ -590,6 +616,8 @@ void loop() {
 
     if (gameCount == gameLength) {
       sound(3);
+      digitalWrite(SPEAKER, LOW);
+
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print(F("Game Over      "));
@@ -605,4 +633,5 @@ void loop() {
       viewMenu("main", current_menu_item);
     }
   }
+  // delay(1000);
 }
